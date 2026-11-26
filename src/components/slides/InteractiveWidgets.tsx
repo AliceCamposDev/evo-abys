@@ -501,7 +501,10 @@ export const InteractiveEventExplorer: React.FC = () => {
     return () => cancelAnimationFrame(raf);
   }, [selectedEv]);
 
-  const maxBar = 340;
+  const maxBar = Math.max(
+    400,
+    ...BENCHMARK_DATA.eventResults.map((e) => Math.max(e.avgFitA, e.avgFitB) * 1.08)
+  );
 
   return (
     <div className="event-explorer">

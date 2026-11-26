@@ -130,7 +130,7 @@ export interface GAConfig {
 }
 
 export const DEFAULT_GA_CONFIG: GAConfig = {
-  populationSize: 15,
+  populationSize: 20,
   generationDuration: 18,
   selectionMethod: 'tournament',
   crossoverMethod: 'uniform',

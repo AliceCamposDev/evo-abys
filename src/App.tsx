@@ -31,6 +31,7 @@ export const App: React.FC = () => {
   const [speed, setSpeed] = useState(1);
   const [viewMode, setViewMode] = useState<ViewMode>('split');
   const [activeTab, setActiveTab] = useState<BottomTab>('charts');
+  const [slidesFullscreen, setSlidesFullscreen] = useState(false);
   const [renderTick, setRenderTick] = useState(0);
 
   const [selectedTankId, setSelectedTankId] = useState<'A' | 'B'>('A');
@@ -211,32 +212,34 @@ export const App: React.FC = () => {
 
       <main className="main-content">
         {/* Clean Bioluminescent Aquariums Stage */}
-        <section className={`tanks-stage mode-${viewMode}`}>
-          {viewMode !== 'focusB' && (
-            <AquariumCanvas
-              tank={tankA}
-              otherTank={tankB}
-              event={event}
-              selectedCreatureId={selectedTankId === 'A' ? selectedCreatureId : null}
-              generationDuration={config.generationDuration}
-              renderTick={renderTick}
-              onSelectCreature={handleSelectCreature}
-              onDropPlankton={handleDropPlankton}
-            />
-          )}
-          {viewMode !== 'focusA' && (
-            <AquariumCanvas
-              tank={tankB}
-              otherTank={tankA}
-              event={event}
-              selectedCreatureId={selectedTankId === 'B' ? selectedCreatureId : null}
-              generationDuration={config.generationDuration}
-              renderTick={renderTick}
-              onSelectCreature={handleSelectCreature}
-              onDropPlankton={handleDropPlankton}
-            />
-          )}
-        </section>
+        {!(activeTab === 'slides' && slidesFullscreen) && (
+          <section className={`tanks-stage mode-${viewMode}`}>
+            {viewMode !== 'focusB' && (
+              <AquariumCanvas
+                tank={tankA}
+                otherTank={tankB}
+                event={event}
+                selectedCreatureId={selectedTankId === 'A' ? selectedCreatureId : null}
+                generationDuration={config.generationDuration}
+                renderTick={renderTick}
+                onSelectCreature={handleSelectCreature}
+                onDropPlankton={handleDropPlankton}
+              />
+            )}
+            {viewMode !== 'focusA' && (
+              <AquariumCanvas
+                tank={tankB}
+                otherTank={tankA}
+                event={event}
+                selectedCreatureId={selectedTankId === 'B' ? selectedCreatureId : null}
+                generationDuration={config.generationDuration}
+                renderTick={renderTick}
+                onSelectCreature={handleSelectCreature}
+                onDropPlankton={handleDropPlankton}
+              />
+            )}
+          </section>
+        )}
 
         {/* Sleek Tabbed Lab Panel */}
         <section className="lab-panel">
@@ -287,7 +290,21 @@ export const App: React.FC = () => {
               onSetEvent={handleSetEvent}
             />
           )}
-          {activeTab === 'slides' && <PresentationSlides tankA={tankA} tankB={tankB} />}
+          {activeTab === 'slides' && (
+            <PresentationSlides
+              tankA={tankA}
+              tankB={tankB}
+              event={event}
+              generationDuration={config.generationDuration}
+              renderTick={renderTick}
+              isRunning={isRunning}
+              fullscreen={slidesFullscreen}
+              onSetFullscreen={setSlidesFullscreen}
+              onToggleRun={() => setIsRunning((r) => !r)}
+              onTurbo={handleTurbo}
+              onDropPlankton={handleDropPlankton}
+            />
+          )}
         </section>
       </main>
     </div>

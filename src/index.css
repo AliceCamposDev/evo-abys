@@ -1108,9 +1108,160 @@ body {
   inset: 0;
   z-index: 999;
   border-radius: 0;
-  padding: 22px 32px;
+  padding: 14px 28px 12px;
   background: radial-gradient(ellipse at top, #08203e 0%, #02060f 70%);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.slides-fullscreen .slides-nav-bar,
+.slides-fullscreen .slides-dot-strip,
+.slides-fullscreen .slides-live-dock,
+.slides-fullscreen .slides-bottom-progress {
+  flex-shrink: 0;
+}
+
+.slides-fullscreen .slide-stage {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
+  justify-content: safe center;
+  padding: 2px 4px 6px;
+}
+
+/* Fullscreen Live Mini Aquariums Dock */
+.slides-live-dock {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding-top: 9px;
+  border-top: 1px solid rgba(56, 189, 248, 0.22);
+}
+
+.slides-live-dock-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  max-width: 1280px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.slides-live-dock-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #e2e8f0;
+}
+
+.dock-hint {
+  font-size: 0.68rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+@media (max-width: 760px) {
+  .dock-hint {
+    display: none;
+  }
+}
+
+.live-pulse-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--emerald);
+  box-shadow: 0 0 8px var(--emerald);
+}
+
+.live-pulse-dot.paused {
+  background: var(--orange);
+  box-shadow: none;
+}
+
+.slides-live-dock-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.slides-live-tanks-row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 14px;
+  max-width: 1280px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.tank-card-compact {
+  height: clamp(145px, 24vh, 245px);
+  aspect-ratio: 900 / 560;
+  width: auto;
+  max-width: calc(50% - 7px);
+  border-radius: 12px;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5);
+}
+
+.tank-card-compact .tank-canvas-wrap {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+}
+
+.tank-card-compact .tank-overlay-tl {
+  top: 7px;
+  left: 7px;
+}
+
+.tank-card-compact .tank-pill {
+  font-size: 0.66rem;
+  padding: 2px 8px;
+  gap: 4px;
+}
+
+.tank-card-compact .tank-overlay-tr {
+  top: 7px;
+  right: 7px;
+  gap: 8px;
+  padding: 3px 8px;
+  border-radius: 8px;
+}
+
+.tank-card-compact .tank-stat span {
+  font-size: 0.55rem;
+}
+
+.tank-card-compact .tank-stat strong {
+  font-size: 0.72rem;
+}
+
+.tank-card-compact .delta-chip {
+  font-size: 0.58rem;
+  padding: 0 4px;
+}
+
+@media (max-width: 760px) {
+  .slides-fullscreen {
+    padding: 12px 14px 10px;
+  }
+
+  .slides-live-tanks-row {
+    gap: 8px;
+  }
+
+  .tank-card-compact {
+    height: auto;
+    width: calc(50% - 4px);
+    max-width: calc(50% - 4px);
+  }
 }
 
 .slides-nav-bar {

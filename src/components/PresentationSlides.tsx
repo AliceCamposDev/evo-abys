@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { AquariumState } from '../engine/types';
+import { AquariumState, OceanEventId } from '../engine/types';
 import { BENCHMARK_DATA } from '../data/benchmarkResults';
+import { AquariumCanvas } from './AquariumCanvas';
 import {
   buildConfidenceBandPath,
   buildPathFromPoints,
@@ -27,10 +28,13 @@ import {
   Crown,
   Dna,
   Eye,
+  FastForward,
   GitMerge,
   Layers,
   Maximize2,
   Minimize2,
+  Pause,
+  Play,
   Scale,
   ShieldAlert,
   Sparkles,
@@ -42,6 +46,15 @@ import {
 interface PresentationSlidesProps {
   tankA: AquariumState;
   tankB: AquariumState;
+  event: OceanEventId;
+  generationDuration: number;
+  renderTick: number;
+  isRunning: boolean;
+  fullscreen: boolean;
+  onSetFullscreen: (fs: boolean) => void;
+  onToggleRun: () => void;
+  onTurbo: (gens: number) => void;
+  onDropPlankton: (tankId: 'A' | 'B', worldX: number, worldY: number) => void;
 }
 
 interface SlideMeta {
@@ -89,13 +102,13 @@ const BANK_QA = [
   },
   {
     q: 'O Aquário B também evolui? Por que ele perde para o A?',
-    short: 'Sim! Ele sobe de 16 para 34.8 plânctons, mas sem Crossover e Elitismo é muito mais lento.',
+    short: 'Sim! Ele sobe de 19 para ~29 plânctons (pico 34.2), mas sem Crossover e Elitismo é muito mais lento.',
     detail:
       'O Aquário B usa seleção suave (roleta raiz) + clonagem com 10% de mutação. Ele consegue aprender, mas em 96 genes não consegue combinar neurônios bons de dois pais distintos nem proteger o campeão contra regressões.',
   },
   {
     q: 'Qual é o papel real do Elitismo (20%)?',
-    short: 'Garante convergência monotônica do melhor indivíduo (top 3 copiados intactos).',
+    short: 'Garante convergência monotônica do melhor indivíduo (top 4 copiados intactos).',
     detail:
       'Em redes de 96 genes, mutações ou cruzamentos aleatórios frequentemente pioram uma rede ótima. O Elitismo cria uma "âncora evolutiva" que impede o cardume de desaprender.',
   },
@@ -103,7 +116,7 @@ const BANK_QA = [
     q: 'Por que não aumentar a rede para 1.000 neurônios?',
     short: 'Maldição da Dimensionalidade: o espaço de busca explode.',
     detail:
-      'Com população de 15 criaturas, otimizar milhares de pesos por busca evolutiva exigiria milhares de gerações. A arquitetura 8→6→4→2 (92 sinapses) é o equilíbrio entre expressividade profunda e convergência rápida (~30–50 gerações).',
+      'Com população de 20 criaturas, otimizar milhares de pesos por busca evolutiva exigiria milhares de gerações. A arquitetura 8→6→4→2 (92 sinapses) é o equilíbrio entre expressividade profunda e convergência rápida (~30–50 gerações).',
   },
   {
     q: 'As criaturas foram programadas para fugir dos predadores?',
@@ -113,9 +126,20 @@ const BANK_QA = [
   },
 ];
 
-export const PresentationSlides: React.FC<PresentationSlidesProps> = ({ tankA, tankB }) => {
+export const PresentationSlides: React.FC<PresentationSlidesProps> = ({
+  tankA,
+  tankB,
+  event,
+  generationDuration,
+  renderTick,
+  isRunning,
+  fullscreen,
+  onSetFullscreen,
+  onToggleRun,
+  onTurbo,
+  onDropPlankton,
+}) => {
   const [slide, setSlide] = useState(0);
-  const [fullscreen, setFullscreen] = useState(false);
   const [dataSource, setDataSource] = useState<'benchmark' | 'live'>('benchmark');
   const [smoothSlideChart, setSmoothSlideChart] = useState(true);
   const [openQaIdx, setOpenQaIdx] = useState<number | null>(0);
@@ -127,11 +151,20 @@ export const PresentationSlides: React.FC<PresentationSlidesProps> = ({ tankA, t
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
       if (e.key === 'ArrowRight') setSlide((s) => Math.min(totalSlides - 1, s + 1));
       if (e.key === 'ArrowLeft') setSlide((s) => Math.max(0, s - 1));
-      if (e.key === 'Escape' && fullscreen) setFullscreen(false);
+      if (e.key === 'Escape' && fullscreen) onSetFullscreen(false);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [fullscreen, totalSlides]);
+  }, [fullscreen, onSetFullscreen, totalSlides]);
+
+  useEffect(() => {
+    if (!fullscreen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [fullscreen]);
 
   const meanFitA =
     BENCHMARK_DATA.seedRuns.reduce((s, r) => s + r.avgFitA, 0) / BENCHMARK_DATA.seedRuns.length;
@@ -142,6 +175,12 @@ export const PresentationSlides: React.FC<PresentationSlidesProps> = ({ tankA, t
     BENCHMARK_DATA.seedRuns.reduce((s, r) => s + r.foodA, 0) / BENCHMARK_DATA.seedRuns.length;
   const meanFoodB =
     BENCHMARK_DATA.seedRuns.reduce((s, r) => s + r.foodB, 0) / BENCHMARK_DATA.seedRuns.length;
+  const winsA = BENCHMARK_DATA.seedRuns.filter((r) => r.avgFitA > r.avgFitB).length;
+  const winRatePct = Math.round((winsA / BENCHMARK_DATA.seedRuns.length) * 100);
+  const eventWinsA = BENCHMARK_DATA.eventResults.filter((e) => e.avgFitA > e.avgFitB).length;
+  const foodMultA =
+    BENCHMARK_DATA.foodCurveA[BENCHMARK_DATA.foodCurveA.length - 1] /
+    Math.max(0.1, BENCHMARK_DATA.foodCurveA[0]);
 
   // Slide 16 Chart Data (Benchmark vs Live)
   const liveReady = tankA.history.length >= 2 && tankB.history.length >= 2;
@@ -221,7 +260,7 @@ export const PresentationSlides: React.FC<PresentationSlidesProps> = ({ tankA, t
           </button>
           <button
             className="btn btn-xs btn-ghost"
-            onClick={() => setFullscreen((f) => !f)}
+            onClick={() => onSetFullscreen(!fullscreen)}
             title={fullscreen ? 'Sair da tela cheia (Esc)' : 'Modo Apresentação (Tela Cheia)'}
           >
             {fullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
@@ -284,8 +323,12 @@ export const PresentationSlides: React.FC<PresentationSlidesProps> = ({ tankA, t
               </div>
               <div className="slide-kpi">
                 <span>Taxa de Vitória (AG)</span>
-                <strong className="text-cyan">5 / 5 Seeds</strong>
-                <em>100% de superioridade estatística</em>
+                <strong className="text-cyan">
+                  {winsA} / {BENCHMARK_DATA.seedRuns.length} Seeds
+                </strong>
+                <em>
+                  {winRatePct}% de vitórias • {BENCHMARK_DATA.populationSize} criaturas
+                </em>
               </div>
             </div>
 
@@ -435,8 +478,8 @@ export const PresentationSlides: React.FC<PresentationSlidesProps> = ({ tankA, t
                   </tr>
                   <tr>
                     <td>População, Plâncton e Predadores</td>
-                    <td>15 criaturas • 16 plânctons • 2 predadores</td>
-                    <td>15 criaturas • 16 plânctons • 2 predadores</td>
+                    <td>20 criaturas • 16 plânctons • 2 predadores</td>
+                    <td>20 criaturas • 16 plânctons • 2 predadores</td>
                   </tr>
                   <tr>
                     <td>Genoma / Rede Neural</td>
@@ -455,7 +498,7 @@ export const PresentationSlides: React.FC<PresentationSlidesProps> = ({ tankA, t
                   </tr>
                   <tr>
                     <td><strong>Elitismo</strong></td>
-                    <td className="text-cyan"><strong>20% (Top 3 intactos)</strong></td>
+                    <td className="text-cyan"><strong>20% (Top 4 intactos)</strong></td>
                     <td className="text-orange">0% (Sem preservação)</td>
                   </tr>
                   <tr>
@@ -815,7 +858,7 @@ export const PresentationSlides: React.FC<PresentationSlidesProps> = ({ tankA, t
                 <ul>
                   <li>
                     Probabilidade proporcional à raiz do fitness: quem vai bem tem mais filhos, então
-                    o Aquário B <strong>também aprende</strong> (dobra a captura de plâncton!).
+                    o Aquário B <strong>também aprende</strong> (aumenta a captura de plâncton em ~53%!).
                   </li>
                   <li>
                     Porém sem corte elitista e sem crossover, o ruído da roleta faz a evolução
@@ -844,9 +887,9 @@ export const PresentationSlides: React.FC<PresentationSlidesProps> = ({ tankA, t
               <div className="slide-box box-cyan">
                 <h4>Com Elitismo 20% (Aquário A)</h4>
                 <ul>
-                  <li>Os <strong>3 melhores cérebros</strong> (de 15) passam intactos com brilho dourado.</li>
+                  <li>Os <strong>4 melhores cérebros</strong> (de 20) passam intactos com brilho dourado.</li>
                   <li>Garante que o teto de conhecimento do cardume nunca despenque.</li>
-                  <li>Os outros 12 filhos ficam livres para explorar combinações ousadas via Crossover + Mutação!</li>
+                  <li>Os outros 16 filhos ficam livres para explorar combinações ousadas via Crossover + Mutação!</li>
                 </ul>
               </div>
               <div className="slide-box box-orange">
@@ -924,7 +967,13 @@ export const PresentationSlides: React.FC<PresentationSlidesProps> = ({ tankA, t
                   </li>
                   <li>
                     <strong>Impacto imediato:</strong> o Aquário A saltou de <code>0/5</code> para{' '}
-                    <strong><code>5/5</code> vitórias</strong>!
+                    <strong>
+                      <code>
+                        {winsA}/{BENCHMARK_DATA.seedRuns.length}
+                      </code>{' '}
+                      vitórias
+                    </strong>{' '}
+                    (+{meanGainPct.toFixed(0)}% na média)!
                   </li>
                 </ul>
               </div>
@@ -951,7 +1000,7 @@ export const PresentationSlides: React.FC<PresentationSlidesProps> = ({ tankA, t
                 <h4>Pressão de Recursos & Sobrevivência</h4>
                 <ul>
                   <li>
-                    <strong>Plâncton Escasso (16 unidades):</strong> para 15 criaturas, a competição
+                    <strong>Plâncton Escasso (16 unidades):</strong> para 20 criaturas, a competição
                     é real — quem não aprende a mirar rápido morre de fome.
                   </li>
                   <li>
@@ -1135,9 +1184,14 @@ export const PresentationSlides: React.FC<PresentationSlidesProps> = ({ tankA, t
             </div>
             <h2 className="slide-title">Reprodutibilidade: Desempenho nas 5 Seeds Independentes</h2>
             <p className="slide-lead">
-              Testar apenas uma seed poderia ser sorte. Repetimos o experimento em{' '}
-              <strong>5 seeds totalmente distintas</strong> por 50 gerações: o Aquário A venceu em{' '}
-              <strong>100% dos casos</strong> (enquanto o B também demonstrou aprendizado gradual).
+              Testar apenas uma seed poderia ser sorte. Repetimos o experimento com{' '}
+              <strong>20 criaturas em 5 seeds totalmente distintas</strong> por 50 gerações: o
+              Aquário A venceu em{' '}
+              <strong>
+                {winsA} de {BENCHMARK_DATA.seedRuns.length} seeds ({winRatePct}%)
+              </strong>{' '}
+              com ganho médio de <strong>+{meanGainPct.toFixed(0)}%</strong> (enquanto o B também
+              demonstrou aprendizado gradual).
             </p>
 
             <div className="slide-table-wrap">
@@ -1160,7 +1214,9 @@ export const PresentationSlides: React.FC<PresentationSlidesProps> = ({ tankA, t
                       <td className="mono">{r.gen1Fit}</td>
                       <td className="mono text-cyan"><strong>{r.avgFitA}</strong></td>
                       <td className="mono text-orange">{r.avgFitB}</td>
-                      <td className="mono text-emerald"><strong>+{r.gainPct}%</strong></td>
+                      <td className={`mono ${r.gainPct >= 0 ? 'text-emerald' : 'text-orange'}`}>
+                        <strong>{r.gainPct >= 0 ? `+${r.gainPct}` : r.gainPct}%</strong>
+                      </td>
                       <td className="mono">{r.foodA} / {r.foodB}</td>
                       <td className="mono">{r.survA}% / {r.survB}%</td>
                     </tr>
@@ -1172,11 +1228,13 @@ export const PresentationSlides: React.FC<PresentationSlidesProps> = ({ tankA, t
             <div className="slide-box">
               <h4>Interpretação dos Dados</h4>
               <p className="ev-note">
-                Observe que o <strong>Aquário B não é “quebrado”</strong> — ele evolui de ~16 para
-                20–59 plânctons/geração graças à seleção suave + 10% de mutação. Porém, a adição de{' '}
+                Observe que o <strong>Aquário B não é “quebrado”</strong> — ele evolui de ~19 para
+                22–34 plânctons/geração (média {meanFoodB.toFixed(1)}) graças à seleção suave + 10%
+                de mutação. Porém, a adição de{' '}
                 <strong>Torneio + Elitismo + Crossover em Blocos Neurais</strong> no Aquário A eleva
                 a média para <strong>{meanFoodA.toFixed(1)} plânctons/geração</strong> (chegando a{' '}
-                <strong>+206.8%</strong> na seed padrão <code>202607</code>!).
+                <strong>+215.2%</strong> na seed padrão <code>202607</code> e{' '}
+                <strong>+293.1%</strong> na seed <code>424242</code>!).
               </p>
             </div>
           </div>
@@ -1220,8 +1278,9 @@ export const PresentationSlides: React.FC<PresentationSlidesProps> = ({ tankA, t
                     cria nem remove neurônios dinamicamente.
                   </li>
                   <li>
-                    <strong>População Compacta (15):</strong> ótima para clareza visual na tela, mas
-                    gera mais variância entre seeds do que populações de 200+ indivíduos.
+                    <strong>População Compacta (20):</strong> ótima para clareza visual na tela, mas
+                    gera mais variância entre seeds (e ocasionais mínimos locais) do que populações
+                    de 200+ indivíduos.
                   </li>
                   <li>
                     <strong>Predadores com IA Fixa:</strong> os predadores não evoluem junto com as
@@ -1264,13 +1323,20 @@ export const PresentationSlides: React.FC<PresentationSlidesProps> = ({ tankA, t
                 <ol>
                   <li>
                     <strong>Aprendizado Emergente Real:</strong> sem código de caça/fuga, redes
-                    profundas de 92 sinapses multiplicaram por <strong>6.3×</strong> a captura de
-                    plâncton em 50 gerações.
+                    profundas de 92 sinapses multiplicaram por{' '}
+                    <strong>{foodMultA.toFixed(1)}×</strong> a captura de plâncton em 50 gerações.
                   </li>
                   <li>
                     <strong>Superioridade Comprovada do AG Completo:</strong> venceu em{' '}
-                    <strong>5/5 seeds</strong> e <strong>4/4 eventos</strong>, com média de{' '}
-                    <strong>+{meanGainPct.toFixed(0)}%</strong> sobre o controle sem crossover.
+                    <strong>
+                      {winsA}/{BENCHMARK_DATA.seedRuns.length} seeds
+                    </strong>{' '}
+                    e{' '}
+                    <strong>
+                      {eventWinsA}/{BENCHMARK_DATA.eventResults.length} eventos
+                    </strong>
+                    , com média de <strong>+{meanGainPct.toFixed(0)}%</strong> sobre o controle sem
+                    crossover.
                   </li>
                   <li>
                     <strong>Engenharia de Representação é Crítica:</strong> Crossover em 10 Blocos
@@ -1312,6 +1378,60 @@ export const PresentationSlides: React.FC<PresentationSlidesProps> = ({ tankA, t
           </div>
         )}
       </div>
+
+      {/* Live Mini Aquariums Dock in Fullscreen Mode */}
+      {fullscreen && (
+        <div className="slides-live-dock">
+          <div className="slides-live-dock-head">
+            <div className="slides-live-dock-title">
+              <span className={`live-pulse-dot ${isRunning ? '' : 'paused'}`} />
+              <span>Simulação ao Vivo</span>
+              <span className="act-badge mono">Geração #{tankA.generation}</span>
+              <span className="dock-hint">Clique na água para soltar plâncton</span>
+            </div>
+            <div className="slides-live-dock-actions">
+              <button
+                className="btn btn-xs btn-ghost"
+                onClick={onToggleRun}
+                title={isRunning ? 'Pausar simulação' : 'Retomar simulação'}
+              >
+                {isRunning ? <Pause size={12} /> : <Play size={12} />}
+                {isRunning ? 'Pausar' : 'Rodar'}
+              </button>
+              <button
+                className="btn btn-xs btn-ghost"
+                onClick={() => onTurbo(10)}
+                title="Avançar 10 gerações rapidamente"
+              >
+                <FastForward size={12} /> +10 Ger
+              </button>
+            </div>
+          </div>
+
+          <div className="slides-live-tanks-row">
+            <AquariumCanvas
+              tank={tankA}
+              otherTank={tankB}
+              event={event}
+              selectedCreatureId={null}
+              generationDuration={generationDuration}
+              renderTick={renderTick}
+              compact
+              onDropPlankton={onDropPlankton}
+            />
+            <AquariumCanvas
+              tank={tankB}
+              otherTank={tankA}
+              event={event}
+              selectedCreatureId={null}
+              generationDuration={generationDuration}
+              renderTick={renderTick}
+              compact
+              onDropPlankton={onDropPlankton}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Bottom thin deck progress bar */}
       <div className="slides-bottom-progress">
